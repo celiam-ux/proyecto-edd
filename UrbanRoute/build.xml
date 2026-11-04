@@ -60,6 +60,7 @@
             </classpath>
         </java>
         <java classname="Funciones.PruebaSesionCsv" fork="true" failonerror="true">
+            <jvmarg value="-Djava.awt.headless=true"/>
             <classpath>
                 <pathelement path="${javac.test.classpath}"/>
                 <pathelement location="${build.test.classes.dir}"/>

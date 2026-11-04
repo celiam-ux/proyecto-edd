@@ -6,7 +6,13 @@ package Funciones;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import org.graphstream.graph.Edge;
 import org.graphstream.graph.Graph;
+import org.graphstream.graph.Node;
+import org.graphstream.stream.GraphReplay;
+import org.graphstream.ui.graphicGraph.GraphicElement;
+import org.graphstream.ui.graphicGraph.GraphicGraph;
+import org.graphstream.ui.graphicGraph.stylesheet.Color;
 
 /**
  * Verifica el controlador sin ventanas, el guardado de las ediciones y la
@@ -16,8 +22,10 @@ import org.graphstream.graph.Graph;
  */
 public class PruebaSesionCsv {
 
-    /** Ejecuta las comprobaciones con un par de CSV temporales. */
+    /** Ejecuta las comprobaciones con los CSV del proyecto y un par temporal. */
     public static void main(String[] args) throws Exception {
+        PruebaSesionCsv prueba = new PruebaSesionCsv();
+        prueba.probarMapaDeEjemplo();
         Path carpeta = Files.createTempDirectory("urbanroute-sesion-");
         Path estaciones = carpeta.resolve("estaciones.csv");
         Path conexiones = carpeta.resolve("conexiones.csv");
@@ -27,7 +35,7 @@ public class PruebaSesionCsv {
                     + "A,Central,L1,Centro,100\nB,Norte,L1,Norte,200\n");
             Files.writeString(conexiones, "Estacion_Origen,Estacion_Destino,Tiempo_Minutos\nA,B,7\n");
             Files.writeString(invalido, "Estacion_Origen,Estacion_Destino,Tiempo_Minutos\nA,Z,7\n");
-            new PruebaSesionCsv().probar(estaciones, conexiones, invalido);
+            prueba.probar(estaciones, conexiones, invalido);
         } finally {
             Files.deleteIfExists(invalido);
             Files.deleteIfExists(conexiones);
@@ -42,6 +50,7 @@ public class PruebaSesionCsv {
         DatoEstacionCsv nueva = new DatoEstacionCsv("C", "Sur, terminal", "L2", "Sur", 0);
         this.verificarRechazo(() -> sesion.editarEstacion(-1, nueva), "Carga ambos");
         sesion.cargar(estaciones.toFile(), conexiones.toFile());
+        Graph redInicial = new MostrarRed().crearRed(sesion.getDatos());
 
         this.verificarRechazo(() -> sesion.editarEstacion(-1,
                 new DatoEstacionCsv("A", "Duplicada", "L1", "Norte", 0)), "repetido");
@@ -59,7 +68,7 @@ public class PruebaSesionCsv {
         this.verificarRechazo(() -> sesion.cargar(estaciones.toFile(), invalido.toFile()), "inexistente");
         this.verificar(sesion.tieneCambios() && sesion.getArchivoConexiones().equals(conexiones.toFile()),
                 "La carga inválida conserva archivos y cambios pendientes.");
-        this.probarRepresentacion(sesion.getDatos());
+        this.probarRepresentacion(redInicial, sesion.getDatos());
         sesion.editarConexion(0, null);
         this.probarGuardadoFallido(sesion, estaciones, conexiones);
         sesion.guardar();
@@ -113,13 +122,67 @@ public class PruebaSesionCsv {
         throw new AssertionError("El campo debía rechazarse.");
     }
 
-    private void probarRepresentacion(DatosCsv datos) {
+    private void probarMapaDeEjemplo() throws Exception {
+        DatosCsv datos = new GestorArchivo().cargar(Path.of("datos", "diccionario.csv").toFile(),
+                Path.of("datos", "grafo.csv").toFile());
         Graph red = new MostrarRed().crearRed(datos);
-        this.verificar(red.getNodeCount() == 2 && red.getNode("C") != null,
-                "La visualización incorpora las estaciones de la sesión.");
+        this.verificar(red.getNodeCount() == 44 && red.getEdgeCount() == 41,
+                "El mapa contiene todas las estaciones y conexiones de los CSV de ejemplo.");
+        for (DatoEstacionCsv estacion : datos.getEstaciones()) {
+            Node nodo = red.getNode(estacion.getId());
+            this.verificar(nodo != null && estacion.getNombre().equals(nodo.getAttribute("ui.label")),
+                    "El mapa muestra el nombre completo de " + estacion.getId() + ".");
+        }
+        DatoConexionCsv[] conexiones = datos.getConexiones();
+        for (int indice = 0; indice < conexiones.length; indice++) {
+            DatoConexionCsv conexion = conexiones[indice];
+            Edge arista = red.getEdge("conexion-" + indice);
+            this.verificar(arista != null && arista.isDirected()
+                    && conexion.getIdOrigen().equals(arista.getSourceNode().getId())
+                    && conexion.getIdDestino().equals(arista.getTargetNode().getId())
+                    && (conexion.getTiempoMinutos() + " min").equals(arista.getAttribute("ui.label")),
+                    "La conexión de ejemplo conserva el sentido y el tiempo en minutos.");
+        }
+        this.verificar(red.getNode("LOS_D").getDegree() == 0, "El mapa conserva las estaciones aisladas.");
+
+        GraphicGraph vista = new GraphicGraph("Prueba del estilo");
+        GraphReplay repeticion = new GraphReplay("CSV de ejemplo");
+        repeticion.addSink(vista);
+        repeticion.replay(red);
+        Color primeraLinea = this.colorDe((GraphicElement) vista.getNode("PRO"));
+        Color[] colores = {primeraLinea, this.colorDe((GraphicElement) vista.getNode("ZOO")),
+            this.colorDe((GraphicElement) vista.getNode("RIN")),
+            this.colorDe((GraphicElement) vista.getNode("ZUM"))};
+        for (int primero = 0; primero < colores.length; primero++) {
+            for (int segundo = primero + 1; segundo < colores.length; segundo++) {
+                this.verificar(!colores[primero].equals(colores[segundo]),
+                        "Cada línea de ejemplo se dibuja en un color distinto.");
+            }
+        }
+        this.verificar(primeraLinea.equals(this.colorDe((GraphicElement) vista.getNode("PER")))
+                && primeraLinea.equals(this.colorDe((GraphicElement) vista.getEdge("conexion-0"))),
+                "La estación y el tramo comparten el color de su línea.");
+        Edge transbordo = red.getNode("CUD").getEdgeToward("PZA_VZLA");
+        Color colorTransbordo = this.colorDe((GraphicElement) vista.getEdge(transbordo.getId()));
+        this.verificar(!colorTransbordo.equals(colores[0]) && !colorTransbordo.equals(colores[2]),
+                "El transbordo se distingue de las líneas que conecta.");
+    }
+
+    private Color colorDe(GraphicElement elemento) {
+        return elemento.getStyle().getFillColor(0);
+    }
+
+    private void probarRepresentacion(Graph redInicial, DatosCsv datos) {
+        Graph red = new MostrarRed().crearRed(datos);
+        this.verificar(red.getNodeCount() == 2 && red.getNode("B") == null
+                && "Sur, terminal".equals(red.getNode("C").getAttribute("ui.label"))
+                && "Centro".equals(red.getNode("A").getAttribute("ui.label"))
+                && "Central".equals(redInicial.getNode("A").getAttribute("ui.label")),
+                "Al volver a abrir el mapa se reflejan las ediciones sin guardar.");
         this.verificar(red.getEdgeCount() == 2 && red.getEdge(0).isDirected()
                 && "C".equals(red.getEdge(0).getTargetNode().getId())
-                && "5 min".equals(red.getEdge(0).getAttribute("ui.label")),
+                && "5 min".equals(red.getEdge(0).getAttribute("ui.label"))
+                && "8 min".equals(red.getEdge(1).getAttribute("ui.label")),
                 "La visualización conserva extremos, sentido, tiempo y filas paralelas.");
     }
 
