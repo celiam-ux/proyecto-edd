@@ -6,6 +6,8 @@ package Funciones;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
+import java.awt.Container;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.event.MouseWheelEvent;
@@ -17,6 +19,7 @@ import javax.swing.JButton;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.LayoutFocusTraversalPolicy;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import org.graphstream.graph.Edge;
@@ -78,6 +81,12 @@ public class MostrarRed {
             ViewPanel vista = (ViewPanel) visor.addDefaultView(false);
             vista.setPreferredSize(new Dimension(1020, 650));
             vista.setFocusable(true);
+            dialogo.setFocusTraversalPolicy(new LayoutFocusTraversalPolicy() {
+                @Override
+                public Component getDefaultComponent(Container contenedor) {
+                    return vista;
+                }
+            });
             vista.addMouseWheelListener(evento -> this.acercarAlCursor(vista, evento));
             dialogo.add(vista, BorderLayout.CENTER);
             dialogo.add(this.crearLeyenda(red.getAttribute("lineas.csv", String[].class)), BorderLayout.EAST);
@@ -186,6 +195,7 @@ public class MostrarRed {
         JButton ajustar = new JButton("Ver toda la red");
         ajustar.addActionListener(evento -> {
             vista.getCamera().resetView();
+            vista.requestFocusInWindow();
             vista.repaint();
         });
         JButton regresar = new JButton("Regresar");

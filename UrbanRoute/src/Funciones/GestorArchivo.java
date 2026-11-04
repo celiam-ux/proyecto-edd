@@ -8,11 +8,10 @@ import EDD.Lista;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -46,6 +45,11 @@ public class GestorArchivo {
             throws ExcepcionArchivoCsv {
         this.validarArchivoLegible(archivoEstaciones, "estaciones");
         this.validarArchivoLegible(archivoConexiones, "conexiones");
+        try {
+            this.validarArchivosDistintos(archivoEstaciones, archivoConexiones);
+        } catch (IOException | SecurityException excepcion) {
+            throw new ExcepcionArchivoCsv("No se pudieron comprobar los archivos CSV", excepcion);
+        }
         DatoEstacionCsv[] estaciones = this.leerEstaciones(archivoEstaciones);
         DatoConexionCsv[] conexiones = this.leerConexiones(archivoConexiones);
         this.validarConjunto(estaciones, conexiones);
@@ -91,6 +95,7 @@ public class GestorArchivo {
         Path respaldoEstaciones = null;
         Path destinoEstaciones = archivoEstaciones.toPath();
         try {
+            this.validarArchivosDistintos(archivoEstaciones, archivoConexiones);
             temporalEstaciones = this.crearTemporal(archivoEstaciones);
             temporalConexiones = this.crearTemporal(archivoConexiones);
             this.escribirEstaciones(estaciones, temporalEstaciones.toFile());
@@ -106,8 +111,10 @@ public class GestorArchivo {
             this.reemplazar(temporalEstaciones, destinoEstaciones);
             temporalEstaciones = null;
             try {
+                // En un sistema que ignora mayúsculas, crear el primer archivo puede revelar un alias.
+                this.validarArchivosDistintos(archivoEstaciones, archivoConexiones);
                 this.reemplazar(temporalConexiones, archivoConexiones.toPath());
-            } catch (IOException | SecurityException excepcion) {
+            } catch (IOException | SecurityException | ExcepcionArchivoCsv excepcion) {
                 try {
                     if (respaldoEstaciones == null) {
                         Files.deleteIfExists(destinoEstaciones);
@@ -156,6 +163,17 @@ public class GestorArchivo {
         }
     }
 
+    private void validarArchivosDistintos(File estaciones, File conexiones)
+            throws IOException, ExcepcionArchivoCsv {
+        Path rutaEstaciones = estaciones.toPath();
+        Path rutaConexiones = conexiones.toPath();
+        if (estaciones.getCanonicalFile().equals(conexiones.getCanonicalFile())
+                || (Files.exists(rutaEstaciones) && Files.exists(rutaConexiones)
+                && Files.isSameFile(rutaEstaciones, rutaConexiones))) {
+            throw new ExcepcionArchivoCsv("Selecciona archivos CSV distintos para estaciones y conexiones");
+        }
+    }
+
     private DatoEstacionCsv[] leerEstaciones(File archivo) throws ExcepcionArchivoCsv {
         Lista filas = new Lista();
         try (BufferedReader lector = this.crearLector(archivo)) {
@@ -177,6 +195,8 @@ public class GestorArchivo {
                     throw this.errorFila(excepcion.getMessage(), numeroLinea, archivo);
                 }
             }
+        } catch (CharacterCodingException excepcion) {
+            throw new ExcepcionArchivoCsv(archivo.getName() + " debe estar codificado en UTF-8", excepcion);
         } catch (IOException excepcion) {
             throw new ExcepcionArchivoCsv("No se pudo leer " + archivo.getName(), excepcion);
         }
@@ -207,6 +227,8 @@ public class GestorArchivo {
                     throw this.errorFila(excepcion.getMessage(), numeroLinea, archivo);
                 }
             }
+        } catch (CharacterCodingException excepcion) {
+            throw new ExcepcionArchivoCsv(archivo.getName() + " debe estar codificado en UTF-8", excepcion);
         } catch (IOException excepcion) {
             throw new ExcepcionArchivoCsv("No se pudo leer " + archivo.getName(), excepcion);
         }
@@ -218,8 +240,7 @@ public class GestorArchivo {
     }
 
     private BufferedReader crearLector(File archivo) throws IOException {
-        return new BufferedReader(new InputStreamReader(
-                new FileInputStream(archivo), StandardCharsets.UTF_8));
+        return Files.newBufferedReader(archivo.toPath(), StandardCharsets.UTF_8);
     }
 
     private void validarCabecera(String cabecera, String esperada, File archivo)
@@ -248,22 +269,41 @@ public class GestorArchivo {
 
     private String[] separarCsv(String linea, int cantidadEsperada, int numeroLinea, File archivo)
             throws ExcepcionArchivoCsv {
-        Lista campos = new Lista();
+        String[] campos = new String[cantidadEsperada];
+        int columna = 0;
         StringBuilder campo = new StringBuilder();
         boolean entreComillas = false;
+        boolean comillasCerradas = false;
         for (int indice = 0; indice < linea.length(); indice++) {
             char caracter = linea.charAt(indice);
-            if (caracter == '"') {
-                if (entreComillas && indice + 1 < linea.length()
-                        && linea.charAt(indice + 1) == '"') {
-                    campo.append('"');
-                    indice++;
+            if (entreComillas) {
+                if (caracter == '"') {
+                    if (indice + 1 < linea.length() && linea.charAt(indice + 1) == '"') {
+                        campo.append('"');
+                        indice++;
+                    } else {
+                        entreComillas = false;
+                        comillasCerradas = true;
+                    }
                 } else {
-                    entreComillas = !entreComillas;
+                    campo.append(caracter);
                 }
-            } else if (caracter == ',' && !entreComillas) {
-                campos.insertarFinal(campo.toString());
+            } else if (caracter == ',') {
+                if (columna == campos.length - 1) {
+                    throw this.errorFila("Cantidad de columnas incorrecta", numeroLinea, archivo);
+                }
+                campos[columna++] = campo.toString().trim();
                 campo.setLength(0);
+                comillasCerradas = false;
+            } else if (comillasCerradas) {
+                if (caracter > ' ') {
+                    throw this.errorFila("Texto después de las comillas de cierre", numeroLinea, archivo);
+                }
+            } else if (caracter == '"') {
+                if (!campo.toString().trim().isEmpty()) {
+                    throw this.errorFila("Comillas dentro de un campo sin entrecomillar", numeroLinea, archivo);
+                }
+                entreComillas = true;
             } else {
                 campo.append(caracter);
             }
@@ -271,15 +311,11 @@ public class GestorArchivo {
         if (entreComillas) {
             throw this.errorFila("Comillas sin cerrar", numeroLinea, archivo);
         }
-        campos.insertarFinal(campo.toString());
-        if (campos.getSize() != cantidadEsperada) {
+        if (columna != campos.length - 1) {
             throw this.errorFila("Cantidad de columnas incorrecta", numeroLinea, archivo);
         }
-        String[] resultado = new String[cantidadEsperada];
-        for (int indice = 0; indice < resultado.length; indice++) {
-            resultado[indice] = ((String) campos.getValor(indice)).trim();
-        }
-        return resultado;
+        campos[columna] = campo.toString().trim();
+        return campos;
     }
 
     private int convertirEntero(String valor, String campo, int numeroLinea, File archivo)
@@ -301,14 +337,14 @@ public class GestorArchivo {
      */
     void validarConjunto(DatoEstacionCsv[] estaciones, DatoConexionCsv[] conexiones)
             throws ExcepcionArchivoCsv {
-        for (int primero = 0; primero < estaciones.length; primero++) {
-            if (estaciones[primero] == null) {
+        for (int indice = 0; indice < estaciones.length; indice++) {
+            DatoEstacionCsv estacion = estaciones[indice];
+            if (estacion == null) {
                 throw new ExcepcionArchivoCsv("Hay una estación vacía en los datos");
             }
-            for (int segundo = primero + 1; segundo < estaciones.length; segundo++) {
-                if (estaciones[primero].getId().equals(estaciones[segundo].getId())) {
-                    throw new ExcepcionArchivoCsv("ID de estación repetido: "
-                            + estaciones[primero].getId());
+            for (int anterior = 0; anterior < indice; anterior++) {
+                if (estacion.getId().equals(estaciones[anterior].getId())) {
+                    throw new ExcepcionArchivoCsv("ID de estación repetido: " + estacion.getId());
                 }
             }
         }

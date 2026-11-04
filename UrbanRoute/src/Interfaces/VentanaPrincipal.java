@@ -80,10 +80,15 @@ public class VentanaPrincipal extends javax.swing.JFrame {
         if (conexiones == null) {
             return;
         }
-        if (this.sesion.getArchivoEstaciones() != null && !this.confirmar("Reemplazar archivos",
-                "Guarda los datos actuales antes de cargar otro archivo"
-                + "\n¿Quieres reemplazar los datos de la sesión?", "Reemplazar")) {
-            return;
+        if (this.sesion.getArchivoEstaciones() != null) {
+            String mensaje = "¿Quieres reemplazar los datos de la sesión?";
+            if (this.sesion.tieneCambios()) {
+                mensaje = "Hay cambios sin guardar. Si los nuevos CSV son válidos, perderás esos cambios."
+                        + "\nPuedes cancelar y guardar primero.\n" + mensaje;
+            }
+            if (!this.confirmar("Reemplazar datos", mensaje, "Reemplazar")) {
+                return;
+            }
         }
         this.ejecutarArchivo("Cargando archivos CSV…", () -> this.sesion.cargar(estaciones, conexiones));
     }//GEN-LAST:event_cargarArchivos

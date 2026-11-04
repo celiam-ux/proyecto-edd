@@ -20,6 +20,7 @@ public class PruebaGestorArchivo {
     private int verificaciones;
     private Path carpetaTemporal;
 
+    /** Ejecuta las pruebas con archivos temporales independientes de los datos del proyecto. */
     public static void main(String[] args) throws Exception {
         PruebaGestorArchivo pruebas = new PruebaGestorArchivo();
         pruebas.ejecutar();
@@ -32,6 +33,7 @@ public class PruebaGestorArchivo {
             this.probarGuardadoYRecarga();
             this.probarCabecerasYFilasInvalidas();
             this.probarReferenciasYDuplicados();
+            this.probarRechazoAlGuardar();
             this.probarSesionDeArchivos();
             System.out.println("Pruebas de GestorArchivo: " + this.verificaciones
                     + " verificaciones correctas.");
@@ -43,7 +45,7 @@ public class PruebaGestorArchivo {
     private void probarCargaValidaYComillas() throws Exception {
         File estaciones = this.crear("estaciones-validas.csv",
                 "ID_Estacion,Nombre,Linea,Zona,Capacidad_Pasajeros_Hora\n"
-                + "A,\"Estación, Central\",Linea 1,Centro,100\n"
+                + "A, \"Estación, Central\" ,Linea 1,Centro,100\n"
                 + "B,\"Estación \"\"Norte\"\"\",Linea 2,Norte,0\n");
         File conexiones = this.crear("conexiones-validas.csv",
                 "Estacion_Origen,Estacion_Destino,Tiempo_Minutos\nA,B,3\n");
@@ -108,6 +110,18 @@ public class PruebaGestorArchivo {
         this.verificarError(this.crear("comillas.csv",
                 "ID_Estacion,Nombre,Linea,Zona,Capacidad_Pasajeros_Hora\nA,\"Uno,L1,Z,2\n"),
                 conexiones, "Comillas sin cerrar");
+        this.verificarError(this.crear("comillas-en-texto.csv",
+                "ID_Estacion,Nombre,Linea,Zona,Capacidad_Pasajeros_Hora\nA,U\"n\"o,L1,Z,2\n"),
+                conexiones, "línea 2: Comillas dentro");
+        this.verificarError(this.crear("texto-tras-comillas.csv",
+                "ID_Estacion,Nombre,Linea,Zona,Capacidad_Pasajeros_Hora\nA,\"Un\"o,L1,Z,2\n"),
+                conexiones, "línea 2: Texto después");
+        File malCodificado = this.crear("mal-codificado.csv",
+                "ID_Estacion,Nombre,Linea,Zona,Capacidad_Pasajeros_Hora\n"
+                + "A,\u00D1,L1,Z,2\nB,Dos,L1,Z,3\n");
+        Files.writeString(malCodificado.toPath(), Files.readString(malCodificado.toPath()),
+                StandardCharsets.ISO_8859_1);
+        this.verificarError(malCodificado, conexiones, "debe estar codificado en UTF-8");
     }
 
     private void probarReferenciasYDuplicados() throws Exception {
@@ -136,6 +150,38 @@ public class PruebaGestorArchivo {
         }
         this.verificar(gestor.getArchivoEstacionesActual() == null, "Sesión inicia sin estaciones");
         this.verificar(gestor.getArchivoConexionesActual() == null, "Sesión inicia sin conexiones");
+    }
+
+    private void probarRechazoAlGuardar() throws Exception {
+        String contenido = "ID_Estacion,Nombre,Linea,Zona,Capacidad_Pasajeros_Hora\nA,Uno,L1,Z,1\n";
+        File estaciones = this.crear("protegido.csv", contenido);
+        File alias = this.ruta("./protegido.csv");
+        File conexiones = this.ruta("sin-crear.csv");
+        DatoEstacionCsv fila = new DatoEstacionCsv("A", "Uno", "L1", "Z", 1);
+        DatosCsv datos = new DatosCsv(new DatoEstacionCsv[]{fila}, new DatoConexionCsv[0]);
+        GestorArchivo gestor = new GestorArchivo();
+
+        this.verificarError(estaciones, alias, "archivos CSV distintos");
+        this.verificarErrorDeGuardado(gestor, datos, estaciones, alias, "archivos CSV distintos");
+        DatosCsv datosConFilaVacia = new DatosCsv(
+                new DatoEstacionCsv[]{fila, null}, new DatoConexionCsv[0]);
+        this.verificarErrorDeGuardado(gestor, datosConFilaVacia, estaciones, conexiones,
+                "estación vacía");
+        this.verificar(contenido.equals(Files.readString(estaciones.toPath())) && !conexiones.exists(),
+                "Los guardados inválidos no alteran ni crean archivos");
+        this.verificar(gestor.getArchivoEstacionesActual() == null
+                && gestor.getArchivoConexionesActual() == null, "No se abre una sesión al fallar");
+    }
+
+    private void verificarErrorDeGuardado(GestorArchivo gestor, DatosCsv datos,
+            File estaciones, File conexiones, String fragmento) throws Exception {
+        try {
+            gestor.guardar(datos, estaciones, conexiones);
+        } catch (ExcepcionArchivoCsv excepcion) {
+            this.verificar(excepcion.getMessage().contains(fragmento), "Error claro: " + fragmento);
+            return;
+        }
+        throw new AssertionError("Se aceptó un guardado inválido: " + fragmento);
     }
 
     private void verificarError(File estaciones, File conexiones, String fragmento)
