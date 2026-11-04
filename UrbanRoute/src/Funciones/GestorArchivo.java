@@ -15,6 +15,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 
@@ -67,7 +68,7 @@ public class GestorArchivo {
     }
 
     /**
-     * Guarda los datos mediante archivos temporales para evitar contenido incompleto.
+     * Prepara ambos CSV y restaura el primero si falla el reemplazo del segundo.
      *
      * @param datos filas actualizadas
      * @param archivoEstaciones destino de estaciones
@@ -87,22 +88,52 @@ public class GestorArchivo {
         this.validarConjunto(estaciones, conexiones);
         Path temporalEstaciones = null;
         Path temporalConexiones = null;
+        Path respaldoEstaciones = null;
+        Path destinoEstaciones = archivoEstaciones.toPath();
         try {
             temporalEstaciones = this.crearTemporal(archivoEstaciones);
             temporalConexiones = this.crearTemporal(archivoConexiones);
             this.escribirEstaciones(estaciones, temporalEstaciones.toFile());
             this.escribirConexiones(conexiones, temporalConexiones.toFile());
-            this.reemplazar(temporalEstaciones, archivoEstaciones.toPath());
+            if (!Files.notExists(destinoEstaciones, LinkOption.NOFOLLOW_LINKS)) {
+                if (!Files.isRegularFile(destinoEstaciones)) {
+                    throw new IOException("El destino de estaciones debe ser un archivo");
+                }
+                respaldoEstaciones = this.crearTemporal(archivoEstaciones);
+                Files.copy(destinoEstaciones, respaldoEstaciones, StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.COPY_ATTRIBUTES, LinkOption.NOFOLLOW_LINKS);
+            }
+            this.reemplazar(temporalEstaciones, destinoEstaciones);
             temporalEstaciones = null;
-            this.reemplazar(temporalConexiones, archivoConexiones.toPath());
+            try {
+                this.reemplazar(temporalConexiones, archivoConexiones.toPath());
+            } catch (IOException | SecurityException excepcion) {
+                try {
+                    if (respaldoEstaciones == null) {
+                        Files.deleteIfExists(destinoEstaciones);
+                    } else {
+                        this.reemplazar(respaldoEstaciones, destinoEstaciones);
+                    }
+                } catch (IOException | SecurityException errorRestauracion) {
+                    excepcion.addSuppressed(errorRestauracion);
+                    String mensaje = "Falló el guardado y no se pudo restaurar el CSV de estaciones.";
+                    if (respaldoEstaciones != null) {
+                        mensaje += "\nCopia anterior: " + respaldoEstaciones;
+                        respaldoEstaciones = null;
+                    }
+                    throw new ExcepcionArchivoCsv(mensaje, excepcion);
+                }
+                throw excepcion;
+            }
             temporalConexiones = null;
             this.archivoEstacionesActual = archivoEstaciones.getAbsoluteFile();
             this.archivoConexionesActual = archivoConexiones.getAbsoluteFile();
-        } catch (IOException excepcion) {
+        } catch (IOException | SecurityException excepcion) {
             throw new ExcepcionArchivoCsv("No se pudieron guardar los archivos CSV", excepcion);
         } finally {
             this.eliminarTemporal(temporalEstaciones);
             this.eliminarTemporal(temporalConexiones);
+            this.eliminarTemporal(respaldoEstaciones);
         }
     }
 
@@ -265,7 +296,10 @@ public class GestorArchivo {
         return new ExcepcionArchivoCsv(archivo.getName() + ", línea " + numeroLinea + ": " + mensaje);
     }
 
-    private void validarConjunto(DatoEstacionCsv[] estaciones, DatoConexionCsv[] conexiones)
+    /**
+     * Comprueba que las filas de una sesión también se puedan guardar.
+     */
+    void validarConjunto(DatoEstacionCsv[] estaciones, DatoConexionCsv[] conexiones)
             throws ExcepcionArchivoCsv {
         for (int primero = 0; primero < estaciones.length; primero++) {
             if (estaciones[primero] == null) {
@@ -361,7 +395,7 @@ public class GestorArchivo {
         if (temporal != null) {
             try {
                 Files.deleteIfExists(temporal);
-            } catch (IOException excepcion) {
+            } catch (IOException | SecurityException excepcion) {
                 // El archivo temporal no afecta los datos guardados.
             }
         }

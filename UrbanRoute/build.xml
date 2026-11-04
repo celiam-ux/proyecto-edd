@@ -12,6 +12,7 @@
     <target name="compile" depends="-init">
         <javac srcdir="${src.dir}"
                destdir="${build.classes.dir}"
+               classpath="${javac.classpath}"
                release="${javac.release}"
                encoding="${source.encoding}"
                includeantruntime="false"
@@ -22,6 +23,9 @@
         <jar destfile="${dist.jar}" manifest="manifest.mf">
             <fileset dir="${build.classes.dir}"/>
         </jar>
+        <copy todir="${dist.dir}/lib">
+            <fileset dir="lib" includes="*.jar,AVISO.md,LICENCIA-*.txt"/>
+        </copy>
     </target>
 
     <target name="run" depends="jar">
@@ -32,7 +36,7 @@
         <mkdir dir="${build.test.classes.dir}"/>
         <javac srcdir="${test.src.dir}"
                destdir="${build.test.classes.dir}"
-               classpath="${build.classes.dir}"
+               classpath="${javac.test.classpath}"
                release="${javac.release}"
                encoding="${source.encoding}"
                includeantruntime="false"
@@ -52,6 +56,12 @@
         <java classname="Funciones.PruebaGestorArchivo" fork="true" failonerror="true">
             <classpath>
                 <pathelement location="${build.classes.dir}"/>
+                <pathelement location="${build.test.classes.dir}"/>
+            </classpath>
+        </java>
+        <java classname="Funciones.PruebaSesionCsv" fork="true" failonerror="true">
+            <classpath>
+                <pathelement path="${javac.test.classpath}"/>
                 <pathelement location="${build.test.classes.dir}"/>
             </classpath>
         </java>

@@ -42,7 +42,11 @@ public class DatoEstacionCsv {
         if (valor == null || valor.trim().isEmpty()) {
             throw new IllegalArgumentException("El campo " + campo + " es obligatorio");
         }
-        return valor.trim();
+        String limpio = valor.trim();
+        if (limpio.indexOf('\n') >= 0 || limpio.indexOf('\r') >= 0) {
+            throw new IllegalArgumentException("El campo " + campo + " debe estar en una sola línea");
+        }
+        return limpio;
     }
 
     /** @return identificador único de la estación */

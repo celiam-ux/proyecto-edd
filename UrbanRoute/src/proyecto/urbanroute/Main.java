@@ -4,8 +4,7 @@
  */
 package proyecto.urbanroute;
 
-import Interfaces.Iniciar;
-import javax.swing.SwingUtilities;
+import Interfaces.VentanaPrincipal;
 
 /**
  * Punto de entrada de la aplicacion UrbanRoute.
@@ -20,9 +19,6 @@ public class Main {
      * @param args argumentos de inicio; no se utilizan
      */
     public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> {
-            Iniciar inicio = new Iniciar();
-            inicio.setVisible(true);
-        });
+        VentanaPrincipal.main(args);
     }
 }
