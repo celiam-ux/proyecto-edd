@@ -39,6 +39,7 @@ public class PruebaSesionCsv {
                     + "A,Central,L1,Centro,100\nB,Norte,L1,Norte,200\n");
             Files.writeString(conexiones, "Estacion_Origen,Estacion_Destino,Tiempo_Minutos\nA,B,7\n");
             Files.writeString(invalido, "Estacion_Origen,Estacion_Destino,Tiempo_Minutos\nA,Z,7\n");
+            prueba.probarConsultas(estaciones, conexiones);
             prueba.probar(estaciones, conexiones, invalido);
         } finally {
             Files.deleteIfExists(invalido);
@@ -46,6 +47,50 @@ public class PruebaSesionCsv {
             Files.deleteIfExists(estaciones);
             Files.deleteIfExists(carpeta);
         }
+    }
+
+    private void probarConsultas(Path estaciones, Path conexiones) throws Exception {
+        SesionCsv sesion = new SesionCsv();
+        sesion.cargar(estaciones.toFile(), conexiones.toFile());
+        ConsultasRed consultas = new ConsultasRed(sesion);
+        sesion.editarEstacion(-1, new DatoEstacionCsv("C", "Sur", "L2", "Sur", 100));
+        sesion.editarEstacion(-1, new DatoEstacionCsv("D", "Terminal", "L2", "Sur", 100));
+        sesion.editarEstacion(-1, new DatoEstacionCsv("E", "Aislada", "L3", "Este", 100));
+        sesion.editarConexion(-1, new DatoConexionCsv("B", "C", 2));
+        sesion.editarConexion(-1, new DatoConexionCsv("A", "C", 20));
+        sesion.editarConexion(-1, new DatoConexionCsv("C", "D", 3));
+        sesion.editarConexion(-1, new DatoConexionCsv("B", "D", 12));
+
+        String ruta = consultas.consultarRuta("A", "D");
+        this.verificar(ruta.contains("Tiempo total: 12 min")
+                && ruta.contains("Central (A)\n• Norte (B)\n• Sur (C)\n• Terminal (D)"),
+                "La ruta mínima muestra tiempo y estaciones en el orden del recorrido.");
+        this.verificar(consultas.consultarRuta("A", "E").contains("No hay una ruta"),
+                "Una estación aislada produce un aviso visual de ruta inexistente.");
+        this.verificarCampoInvalido(() -> consultas.consultarRuta(null, "A"), "Selecciona");
+        this.verificarCampoInvalido(() -> consultas.consultarRuta("A", ""), "Selecciona");
+        this.verificarCampoInvalido(() -> consultas.consultarRuta("A", "A"), "distintas");
+        this.verificarCampoInvalido(() -> consultas.consultarRuta("A", "Z"), "red actual");
+
+        String hubs = consultas.consultarHubs();
+        this.verificar(hubs.contains("por estación: 3")
+                && hubs.contains("Norte (B)") && hubs.contains("Sur (C)")
+                && !hubs.contains("Central (A)") && !hubs.contains("Terminal (D)") && !hubs.contains("Aislada (E)"),
+                "Los hubs incluyen todo el empate por grado máximo y excluyen estaciones de grado menor.");
+        String subredes = consultas.consultarSubredes();
+        this.verificar(subredes.contains("Subredes encontradas: 2") && subredes.contains("(4 estaciones):")
+                && subredes.contains("(1 estación):\n• Aislada (E)"),
+                "La estación aislada se presenta como una subred propia.");
+
+        sesion.editarConexion(3, new DatoConexionCsv("C", "D", 1));
+        this.verificar(consultas.consultarRuta("A", "D").contains("Tiempo total: 10 min"),
+                "Las consultas usan el tramo editado sin necesidad de guardar el CSV.");
+        while (sesion.getDatos().getCantidadConexiones() > 0) {
+            sesion.editarConexion(0, null);
+        }
+        this.verificar(consultas.consultarHubs().contains("No hay hubs")
+                && consultas.consultarSubredes().contains("Subredes encontradas: 5"),
+                "Al retirar todas las conexiones no quedan hubs y cada estación queda aislada.");
     }
 
     private void probar(Path estaciones, Path conexiones, Path invalido) throws Exception {

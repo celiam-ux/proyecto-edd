@@ -335,28 +335,32 @@
                 <Component class="javax.swing.JButton" name="consultarRuta">
                   <Properties>
                     <Property name="text" type="java.lang.String" value="Rutas"/>
-                    <Property name="toolTipText" type="java.lang.String" value="Pendiente de integrar el grafo del equipo"/>
+                    <Property name="toolTipText" type="java.lang.String" value="Busca la ruta de menor tiempo entre dos estaciones"/>
                     <Property name="enabled" type="boolean" value="false"/>
                   </Properties>
+                  <Events>
+                    <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="mostrarRuta"/>
+                  </Events>
                 </Component>
                 <Component class="javax.swing.JButton" name="consultarSubred">
                   <Properties>
                     <Property name="text" type="java.lang.String" value="Subredes"/>
-                    <Property name="toolTipText" type="java.lang.String" value="Pendiente de integrar el grafo del equipo"/>
+                    <Property name="toolTipText" type="java.lang.String" value="Muestra los grupos de estaciones conectadas entre sí"/>
                     <Property name="enabled" type="boolean" value="false"/>
                   </Properties>
+                  <Events>
+                    <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="mostrarSubredes"/>
+                  </Events>
                 </Component>
                 <Component class="javax.swing.JButton" name="consultarHubs">
                   <Properties>
                     <Property name="text" type="java.lang.String" value="Hubs"/>
-                    <Property name="toolTipText" type="java.lang.String" value="Pendiente de integrar el grafo del equipo"/>
+                    <Property name="toolTipText" type="java.lang.String" value="Muestra las estaciones con más conexiones directas"/>
                     <Property name="enabled" type="boolean" value="false"/>
                   </Properties>
-                </Component>
-                <Component class="javax.swing.JLabel" name="avisoConsultas">
-                  <Properties>
-                    <Property name="text" type="java.lang.String" value="Consultas pendientes de integración"/>
-                  </Properties>
+                  <Events>
+                    <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="mostrarHubs"/>
+                  </Events>
                 </Component>
               </SubComponents>
             </Container>

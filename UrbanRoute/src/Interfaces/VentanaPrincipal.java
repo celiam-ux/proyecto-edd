@@ -4,6 +4,7 @@
  */
 package Interfaces;
 
+import Funciones.ConsultasRed;
 import Funciones.DatoConexionCsv;
 import Funciones.DatoEstacionCsv;
 import Funciones.DatosCsv;
@@ -16,12 +17,15 @@ import java.awt.event.ActionEvent;
 import java.awt.event.WindowEvent;
 import java.io.File;
 import java.util.concurrent.ExecutionException;
+import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
 import javax.swing.JTable;
+import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
@@ -40,6 +44,7 @@ import javax.swing.table.DefaultTableModel;
 public class VentanaPrincipal extends javax.swing.JFrame {
 
     private final SesionCsv sesion = new SesionCsv();
+    private final ConsultasRed consultasRed = new ConsultasRed(this.sesion);
     private boolean ocupada;
 
     /** Construye el formulario en el hilo de eventos de Swing. */
@@ -48,7 +53,6 @@ public class VentanaPrincipal extends javax.swing.JFrame {
         this.configurarTabla(this.tablaEstaciones);
         this.configurarTabla(this.tablaConexiones);
         this.actualizarVista();
-        this.actualizarConsultasDelGrafo();
         this.setMinimumSize(this.getSize());
         this.setLocationRelativeTo(null);
     }
@@ -203,19 +207,15 @@ public class VentanaPrincipal extends javax.swing.JFrame {
         boolean estacionSeleccionada = haySesion && this.tablaEstaciones.getSelectedRow() >= 0;
         this.editarEstacion.setEnabled(estacionSeleccionada);
         this.eliminarEstacion.setEnabled(estacionSeleccionada);
-        this.agregarConexion.setEnabled(haySesion && this.tablaEstaciones.getRowCount() >= 2);
+        int cantidadEstaciones = this.tablaEstaciones.getRowCount();
+        this.agregarConexion.setEnabled(haySesion && cantidadEstaciones >= 2);
         boolean conexionSeleccionada = haySesion && this.tablaConexiones.getSelectedRow() >= 0;
         this.editarConexion.setEnabled(conexionSeleccionada);
         this.eliminarConexion.setEnabled(conexionSeleccionada);
-        this.visualizar.setEnabled(haySesion && this.tablaEstaciones.getRowCount() > 0);
-    }
-
-    // Integración con el equipo: habilitar las consultas al conectar el grafo
-    // del proyecto y presentar aquí sus resultados. El visor usa la sesión CSV.
-    private void actualizarConsultasDelGrafo() {
-        this.consultarRuta.setEnabled(false);
-        this.consultarSubred.setEnabled(false);
-        this.consultarHubs.setEnabled(false);
+        this.visualizar.setEnabled(haySesion && cantidadEstaciones > 0);
+        this.consultarRuta.setEnabled(haySesion && cantidadEstaciones >= 2);
+        this.consultarSubred.setEnabled(haySesion && cantidadEstaciones > 0);
+        this.consultarHubs.setEnabled(haySesion && cantidadEstaciones > 0);
     }
 
     private void agregarEstacion(ActionEvent evento) {//GEN-FIRST:event_agregarEstacion
@@ -271,8 +271,8 @@ public class VentanaPrincipal extends javax.swing.JFrame {
         for (int indice = 0; indice < ids.length; indice++) {
             ids[indice] = estaciones[indice].getId();
         }
-        javax.swing.JComboBox<String> origen = new javax.swing.JComboBox<>(ids);
-        javax.swing.JComboBox<String> destino = new javax.swing.JComboBox<>(ids);
+        JComboBox<String> origen = new JComboBox<>(ids);
+        JComboBox<String> destino = new JComboBox<>(ids);
         origen.setSelectedItem(actual == null ? null : actual.getIdOrigen());
         destino.setSelectedItem(actual == null ? null : actual.getIdDestino());
         JTextField tiempo = new JTextField(actual == null ? "" : "" + actual.getTiempoMinutos());
@@ -285,14 +285,7 @@ public class VentanaPrincipal extends javax.swing.JFrame {
     }
 
     private void pedirCampos(String titulo, String[] etiquetas, JComponent[] campos, AccionCsv accion) {
-        JPanel formulario = new JPanel(new GridLayout(0, 1, 0, 4));
-        formulario.setPreferredSize(new Dimension(360, campos.length * 55));
-        for (int indice = 0; indice < campos.length; indice++) {
-            JLabel etiqueta = new JLabel(etiquetas[indice]);
-            etiqueta.setLabelFor(campos[indice]);
-            formulario.add(etiqueta);
-            formulario.add(campos[indice]);
-        }
+        JPanel formulario = this.crearFormulario(etiquetas, campos);
         Object[] opciones = {"Aplicar", "Cancelar"};
         while (JOptionPane.showOptionDialog(this, formulario, titulo,
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE,
@@ -301,6 +294,18 @@ public class VentanaPrincipal extends javax.swing.JFrame {
                 return;
             }
         }
+    }
+
+    private JPanel crearFormulario(String[] etiquetas, JComponent[] campos) {
+        JPanel formulario = new JPanel(new GridLayout(0, 1, 0, 4));
+        formulario.setPreferredSize(new Dimension(360, campos.length * 55));
+        for (int indice = 0; indice < campos.length; indice++) {
+            JLabel etiqueta = new JLabel(etiquetas[indice]);
+            etiqueta.setLabelFor(campos[indice]);
+            formulario.add(etiqueta);
+            formulario.add(campos[indice]);
+        }
+        return formulario;
     }
 
     private boolean aplicarEdicion(AccionCsv accion) {
@@ -333,6 +338,58 @@ public class VentanaPrincipal extends javax.swing.JFrame {
             this.mostrarError("No se pudo abrir la visualización de la red.");
         }
     }//GEN-LAST:event_abrirVisualizacion
+
+    private void mostrarRuta(ActionEvent evento) {//GEN-FIRST:event_mostrarRuta
+        DatoEstacionCsv[] estaciones = this.sesion.getDatos().getEstaciones();
+        String[] opciones = new String[estaciones.length];
+        for (int indice = 0; indice < estaciones.length; indice++) {
+            DatoEstacionCsv estacion = estaciones[indice];
+            opciones[indice] = estacion.getId() + " — " + estacion.getNombre();
+        }
+        JComboBox<String> origen = new JComboBox<>(opciones);
+        JComboBox<String> destino = new JComboBox<>(opciones);
+        origen.setSelectedIndex(-1);
+        destino.setSelectedIndex(-1);
+        JPanel formulario = this.crearFormulario(new String[]{"Estación de origen", "Estación de destino"},
+                new JComponent[]{origen, destino});
+        String titulo = "Ruta más rápida";
+        Object[] botones = {"Buscar ruta", "Cancelar"};
+        while (JOptionPane.showOptionDialog(this, formulario, titulo, JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE, null, botones, botones[0]) == JOptionPane.OK_OPTION) {
+            try {
+                String resultado = this.consultasRed.consultarRuta(
+                        this.obtenerIdSeleccionado(origen, estaciones), this.obtenerIdSeleccionado(destino, estaciones));
+                this.mostrarResultado(titulo, resultado);
+                return;
+            } catch (IllegalArgumentException excepcion) {
+                this.mostrarError(excepcion.getMessage());
+            }
+        }
+    }//GEN-LAST:event_mostrarRuta
+
+    private String obtenerIdSeleccionado(JComboBox<String> selector, DatoEstacionCsv[] estaciones) {
+        int indice = selector.getSelectedIndex();
+        return indice < 0 ? null : estaciones[indice].getId();
+    }
+
+    private void mostrarSubredes(ActionEvent evento) {//GEN-FIRST:event_mostrarSubredes
+        this.mostrarResultado("Subredes", this.consultasRed.consultarSubredes());
+    }//GEN-LAST:event_mostrarSubredes
+
+    private void mostrarHubs(ActionEvent evento) {//GEN-FIRST:event_mostrarHubs
+        this.mostrarResultado("Hubs de la red", this.consultasRed.consultarHubs());
+    }//GEN-LAST:event_mostrarHubs
+
+    private void mostrarResultado(String titulo, String resultado) {
+        JTextArea texto = new JTextArea(resultado);
+        texto.setRows(Math.max(2, Math.min(14, texto.getLineCount())));
+        texto.setColumns(44);
+        texto.setEditable(false);
+        texto.setLineWrap(true);
+        texto.setWrapStyleWord(true);
+        texto.setCaretPosition(0);
+        JOptionPane.showMessageDialog(this, new JScrollPane(texto), titulo, JOptionPane.INFORMATION_MESSAGE);
+    }
 
     private void cerrarVentana(WindowEvent evento) {//GEN-FIRST:event_cerrarVentana
         if (!this.ocupada && (!this.sesion.tieneCambios() || this.confirmar("Cambios sin guardar",
@@ -402,7 +459,6 @@ public class VentanaPrincipal extends javax.swing.JFrame {
         consultarRuta = new javax.swing.JButton();
         consultarSubred = new javax.swing.JButton();
         consultarHubs = new javax.swing.JButton();
-        avisoConsultas = new javax.swing.JLabel();
         estado = new javax.swing.JLabel();
 
         setDefaultCloseOperation(0);
@@ -520,22 +576,23 @@ public class VentanaPrincipal extends javax.swing.JFrame {
         consultas.add(visualizar);
 
         consultarRuta.setText("Rutas");
-        consultarRuta.setToolTipText("Pendiente de integrar el grafo del equipo");
+        consultarRuta.setToolTipText("Busca la ruta de menor tiempo entre dos estaciones");
         consultarRuta.setEnabled(false);
+        consultarRuta.addActionListener(this::mostrarRuta);
         consultas.add(consultarRuta);
 
         consultarSubred.setText("Subredes");
-        consultarSubred.setToolTipText("Pendiente de integrar el grafo del equipo");
+        consultarSubred.setToolTipText("Muestra los grupos de estaciones conectadas entre sí");
         consultarSubred.setEnabled(false);
+        consultarSubred.addActionListener(this::mostrarSubredes);
         consultas.add(consultarSubred);
 
         consultarHubs.setText("Hubs");
-        consultarHubs.setToolTipText("Pendiente de integrar el grafo del equipo");
+        consultarHubs.setToolTipText("Muestra las estaciones con más conexiones directas");
         consultarHubs.setEnabled(false);
+        consultarHubs.addActionListener(this::mostrarHubs);
         consultas.add(consultarHubs);
 
-        avisoConsultas.setText("Consultas pendientes de integración");
-        consultas.add(avisoConsultas);
         pie.add(consultas, java.awt.BorderLayout.NORTH);
 
         estado.setText("Carga un CSV de estaciones y otro de conexiones para comenzar.");
@@ -558,7 +615,6 @@ public class VentanaPrincipal extends javax.swing.JFrame {
     private javax.swing.JButton agregarEstacion;
     private javax.swing.JLabel archivos;
     private javax.swing.JPanel archivosAcciones;
-    private javax.swing.JLabel avisoConsultas;
     private javax.swing.JButton cargar;
     private javax.swing.JPanel conexiones;
     private javax.swing.JButton consultarHubs;
