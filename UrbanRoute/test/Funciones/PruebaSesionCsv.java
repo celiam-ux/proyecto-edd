@@ -4,6 +4,10 @@
  */
 package Funciones;
 
+import estructuras.Arista;
+import estructuras.Estacion;
+import estructuras.Grafo;
+import estructuras.ListaPropia;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.graphstream.graph.Edge;
@@ -16,7 +20,7 @@ import org.graphstream.ui.graphicGraph.stylesheet.Color;
 
 /**
  * Verifica el controlador sin ventanas, el guardado de las ediciones y la
- * proyección de las filas al visor.
+ * proyección de las filas al visor y al grafo del equipo.
  *
  * @author Eliam
  */
@@ -51,6 +55,7 @@ public class PruebaSesionCsv {
         this.verificarRechazo(() -> sesion.editarEstacion(-1, nueva), "Carga ambos");
         sesion.cargar(estaciones.toFile(), conexiones.toFile());
         Graph redInicial = new MostrarRed().crearRed(sesion.getDatos());
+        this.probarGrafoCargado(sesion);
 
         this.verificarRechazo(() -> sesion.editarEstacion(-1,
                 new DatoEstacionCsv("A", "Duplicada", "L1", "Norte", 0)), "repetido");
@@ -58,18 +63,51 @@ public class PruebaSesionCsv {
         this.verificarRechazo(() -> sesion.editarConexion(0,
                 new DatoConexionCsv("A", "C", 5)), "inexistente");
         this.verificar(!sesion.tieneCambios(), "Las ediciones inválidas no ensucian la sesión.");
+        this.verificarTramo(sesion.crearGrafo(), "A", "B", 7);
 
         sesion.editarEstacion(-1, nueva);
-        sesion.editarEstacion(0, new DatoEstacionCsv("A", "Centro", "L1", "Centro", 120));
+        Grafo grafo = sesion.crearGrafo();
+        this.verificar(grafo.cantidadEstaciones() == 3 && grafo.getGrado("C") == 0
+                && grafo.getTablaHash().contiene("C"), "El alta incorpora una estación aislada.");
+
+        sesion.editarEstacion(0, new DatoEstacionCsv("A", "Centro", "L2", "Oeste", 120));
+        Estacion actualizada = sesion.crearGrafo().getEstacion("A");
+        this.verificar(actualizada != null && "Centro".equals(actualizada.getNombre())
+                && "L2".equals(actualizada.getLinea()) && "Oeste".equals(actualizada.getZona())
+                && actualizada.getCapacidad() == 120, "El grafo y el índice reflejan la edición de la estación.");
+
         sesion.editarConexion(0, new DatoConexionCsv("A", "C", 5));
-        sesion.editarConexion(-1, new DatoConexionCsv("A", "C", 8));
+        grafo = sesion.crearGrafo();
+        this.verificarTramo(grafo, "A", "C", 5);
+        this.verificar(grafo.getGrado("B") == 0, "Cambiar un extremo retira el tramo anterior.");
+
+        sesion.editarConexion(-1, new DatoConexionCsv("B", "C", 9));
+        this.verificarTramo(sesion.crearGrafo(), "B", "C", 9);
+        sesion.editarConexion(1, new DatoConexionCsv("B", "C", 6));
+        this.verificarTramo(sesion.crearGrafo(), "B", "C", 6);
+        sesion.editarConexion(1, null);
+        grafo = sesion.crearGrafo();
+        this.verificar(grafo.getGrado("B") == 0 && grafo.getGrado("C") == 1,
+                "La baja retira la conexión de sus dos extremos.");
+        this.verificarTramo(grafo, "A", "C", 5);
+
+        sesion.editarConexion(-1, new DatoConexionCsv("A", "C", 4));
+        grafo = sesion.crearGrafo();
+        this.verificarTramo(grafo, "A", "C", 5);
+        this.verificar(grafo.getGrado("A") == 1 && grafo.getGrado("C") == 1,
+                "El grafo conserva un solo tramo para las filas paralelas.");
         sesion.editarEstacion(1, null);
+        grafo = sesion.crearGrafo();
+        this.verificar(grafo.cantidadEstaciones() == 2 && !grafo.existeEstacion("B")
+                && !grafo.getTablaHash().contiene("B"), "La baja retira la estación del grafo y del índice.");
 
         this.verificarRechazo(() -> sesion.cargar(estaciones.toFile(), invalido.toFile()), "inexistente");
         this.verificar(sesion.tieneCambios() && sesion.getArchivoConexiones().equals(conexiones.toFile()),
                 "La carga inválida conserva archivos y cambios pendientes.");
+        this.verificarTramo(sesion.crearGrafo(), "A", "C", 5);
         this.probarRepresentacion(redInicial, sesion.getDatos());
         sesion.editarConexion(0, null);
+        this.verificarTramo(sesion.crearGrafo(), "A", "C", 4);
         this.probarGuardadoFallido(sesion, estaciones, conexiones);
         sesion.guardar();
         this.verificar(!sesion.tieneCambios(), "Guardar limpia el indicador.");
@@ -79,8 +117,51 @@ public class PruebaSesionCsv {
                 && "Sur, terminal".equals(recarga.getEstaciones()[1].getNombre()),
                 "La recarga conserva el alta, el cambio y la baja de estaciones.");
         this.verificar(recarga.getCantidadConexiones() == 1
-                && recarga.getConexiones()[0].getTiempoMinutos() == 8,
+                && recarga.getConexiones()[0].getTiempoMinutos() == 4,
                 "Se conserva la conexión restante.");
+
+        sesion.editarConexion(0, null);
+        grafo = sesion.crearGrafo();
+        this.verificar(grafo.getGrado("A") == 0 && grafo.getGrado("C") == 0,
+                "Eliminar la última fila de un par retira ambos sentidos.");
+        sesion.cargar(estaciones.toFile(), conexiones.toFile());
+        this.verificarTramo(sesion.crearGrafo(), "A", "C", 4);
+    }
+
+    private void probarGrafoCargado(SesionCsv sesion) {
+        Grafo grafo = sesion.crearGrafo();
+        Estacion estacion = grafo.getTablaHash().obtener("A");
+        this.verificar(grafo.cantidadEstaciones() == 2 && grafo.getTablaHash().tamano() == 2
+                && grafo.existeEstacion("A") && grafo.existeEstacion("B") && estacion != null
+                && "A".equals(estacion.getId()) && "Central".equals(estacion.getNombre())
+                && "L1".equals(estacion.getLinea()) && "Centro".equals(estacion.getZona())
+                && estacion.getCapacidad() == 100, "La carga registra las estaciones con todos sus campos.");
+        this.verificarTramo(grafo, "A", "B", 7);
+
+        grafo.eliminarEstacion("B");
+        estacion.setNombre("Cambio externo");
+        Grafo vigente = sesion.crearGrafo();
+        this.verificar("Central".equals(vigente.getEstacion("A").getNombre()),
+                "Modificar una instantánea no modifica los datos de la sesión.");
+        this.verificarTramo(vigente, "A", "B", 7);
+    }
+
+    private void verificarTramo(Grafo grafo, String origen, String destino, int peso) {
+        this.verificar(this.tieneArista(grafo.getVecinos(origen), destino, peso)
+                && this.tieneArista(grafo.getVecinos(destino), origen, peso),
+                "El tramo " + origen + " - " + destino + " debe pesar " + peso + " en ambos sentidos.");
+    }
+
+    private boolean tieneArista(ListaPropia<Arista> vecinos, String destino, int peso) {
+        if (vecinos != null) {
+            for (estructuras.Nodo<Arista> nodo = vecinos.getCabeza(); nodo != null; nodo = nodo.getSiguiente()) {
+                Arista arista = nodo.getInfo();
+                if (destino.equals(arista.getDestino())) {
+                    return arista.getPeso() == peso;
+                }
+            }
+        }
+        return false;
     }
 
     private void probarGuardadoFallido(SesionCsv sesion, Path estaciones, Path conexiones)
@@ -182,7 +263,7 @@ public class PruebaSesionCsv {
         this.verificar(red.getEdgeCount() == 2 && red.getEdge(0).isDirected()
                 && "C".equals(red.getEdge(0).getTargetNode().getId())
                 && "5 min".equals(red.getEdge(0).getAttribute("ui.label"))
-                && "8 min".equals(red.getEdge(1).getAttribute("ui.label")),
+                && "4 min".equals(red.getEdge(1).getAttribute("ui.label")),
                 "La visualización conserva extremos, sentido, tiempo y filas paralelas.");
     }
 

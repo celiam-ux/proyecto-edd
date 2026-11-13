@@ -4,6 +4,9 @@
  */
 package Funciones;
 
+import estructuras.Estacion;
+import estructuras.Grafo;
+import estructuras.TablaHash;
 import java.io.File;
 
 /**
@@ -33,6 +36,21 @@ public class SesionCsv {
     /** @return filas vigentes de ambas tablas */
     public DatosCsv getDatos() {
         return this.datos;
+    }
+
+    // Cada consulta crea una red independiente de la sesión, con o sin cambios por guardar.
+    public Grafo crearGrafo() {
+        DatosCsv vigentes = this.datos;
+        Grafo grafo = new Grafo(new TablaHash());
+        for (DatoEstacionCsv fila : vigentes.getEstaciones()) {
+            grafo.agregarEstacion(new Estacion(fila.getId(), fila.getNombre(), fila.getLinea(),
+                    fila.getZona(), fila.getCapacidadPasajerosHora()));
+        }
+        // El grafo del equipo registra ambos sentidos y conserva el primer tramo por par.
+        for (DatoConexionCsv fila : vigentes.getConexiones()) {
+            grafo.agregarArista(fila.getIdOrigen(), fila.getIdDestino(), fila.getTiempoMinutos());
+        }
+        return grafo;
     }
 
     /** @return si hay cambios pendientes de guardar */
