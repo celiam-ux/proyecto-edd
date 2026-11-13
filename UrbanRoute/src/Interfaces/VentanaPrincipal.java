@@ -228,7 +228,8 @@ public class VentanaPrincipal extends javax.swing.JFrame {
 
     private void eliminarEstacion(ActionEvent evento) {//GEN-FIRST:event_eliminarEstacion
         int fila = this.filaSeleccionada(this.tablaEstaciones);
-        if (this.confirmar("Eliminar estación", "¿Eliminar la estación seleccionada?", "Eliminar")) {
+        if (this.confirmar("Eliminar estación", "¿Eliminar la estación seleccionada y sus conexiones?"
+                + "\nPuedes revisar el efecto antes de guardar los CSV.", "Eliminar")) {
             this.aplicarEdicion(() -> this.sesion.editarEstacion(fila, null));
         }
     }//GEN-LAST:event_eliminarEstacion
@@ -333,7 +334,7 @@ public class VentanaPrincipal extends javax.swing.JFrame {
 
     private void abrirVisualizacion(ActionEvent evento) {//GEN-FIRST:event_abrirVisualizacion
         try {
-            new MostrarRed().abrir(this, this.sesion.getDatos());
+            new MostrarRed().abrir(this, this.sesion.crearGrafo());
         } catch (RuntimeException | LinkageError excepcion) {
             this.mostrarError("No se pudo abrir la visualización de la red.");
         }
@@ -363,6 +364,9 @@ public class VentanaPrincipal extends javax.swing.JFrame {
                 return;
             } catch (IllegalArgumentException excepcion) {
                 this.mostrarError(excepcion.getMessage());
+            } catch (RuntimeException excepcion) {
+                this.mostrarError("No se pudo calcular la ruta con los datos actuales.");
+                return;
             }
         }
     }//GEN-LAST:event_mostrarRuta
@@ -373,12 +377,20 @@ public class VentanaPrincipal extends javax.swing.JFrame {
     }
 
     private void mostrarSubredes(ActionEvent evento) {//GEN-FIRST:event_mostrarSubredes
-        this.mostrarResultado("Subredes", this.consultasRed.consultarSubredes());
+        this.mostrarConsulta("Subredes", this.consultasRed::consultarSubredes);
     }//GEN-LAST:event_mostrarSubredes
 
     private void mostrarHubs(ActionEvent evento) {//GEN-FIRST:event_mostrarHubs
-        this.mostrarResultado("Hubs de la red", this.consultasRed.consultarHubs());
+        this.mostrarConsulta("Hubs de la red", this.consultasRed::consultarHubs);
     }//GEN-LAST:event_mostrarHubs
+
+    private void mostrarConsulta(String titulo, ConsultaCsv consulta) {
+        try {
+            this.mostrarResultado(titulo, consulta.ejecutar());
+        } catch (RuntimeException excepcion) {
+            this.mostrarError("No se pudo completar la consulta con los datos actuales.");
+        }
+    }
 
     private void mostrarResultado(String titulo, String resultado) {
         JTextArea texto = new JTextArea(resultado);
@@ -416,7 +428,9 @@ public class VentanaPrincipal extends javax.swing.JFrame {
             } catch (UnsupportedLookAndFeelException excepcion) {
                 // Swing conserva el tema disponible.
             }
-            new VentanaPrincipal().setVisible(true);
+            VentanaPrincipal ventana = new VentanaPrincipal();
+            ventana.ejecutarArchivo("Cargando archivos maestros…", ventana.sesion::cargarMaestro);
+            ventana.setVisible(true);
         });
     }
 
@@ -424,6 +438,12 @@ public class VentanaPrincipal extends javax.swing.JFrame {
     private interface AccionCsv {
 
         void ejecutar() throws ExcepcionArchivoCsv;
+    }
+
+    @FunctionalInterface
+    private interface ConsultaCsv {
+
+        String ejecutar();
     }
 
     @SuppressWarnings("unchecked")

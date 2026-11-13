@@ -8,6 +8,7 @@ import estructuras.Estacion;
 import estructuras.Grafo;
 import estructuras.TablaHash;
 import java.io.File;
+import java.net.URISyntaxException;
 
 /**
  * Conserva el par de CSV y los cambios pendientes. Valida cada edición antes de
@@ -20,6 +21,25 @@ public class SesionCsv {
     private final GestorArchivo gestor = new GestorArchivo();
     private DatosCsv datos = new DatosCsv(new DatoEstacionCsv[0], new DatoConexionCsv[0]);
     private boolean cambios;
+
+    /**
+     * Carga los CSV maestros junto al JAR o en la carpeta del proyecto.
+     *
+     * @throws ExcepcionArchivoCsv cuando falta un archivo o el par no es válido
+     */
+    public void cargarMaestro() throws ExcepcionArchivoCsv {
+        try {
+            File ubicacion = new File(SesionCsv.class.getProtectionDomain()
+                    .getCodeSource().getLocation().toURI());
+            // Ant ejecuta desde build/classes o desde el JAR de dist.
+            File proyecto = ubicacion.isDirectory() ? ubicacion.getParentFile().getParentFile()
+                    : ubicacion.getParentFile();
+            File carpeta = new File(proyecto, "datos");
+            this.cargar(new File(carpeta, "diccionario.csv"), new File(carpeta, "grafo.csv"));
+        } catch (URISyntaxException | IllegalArgumentException excepcion) {
+            throw new ExcepcionArchivoCsv("No se encontró la carpeta de los CSV maestros.", excepcion);
+        }
+    }
 
     /** Carga el par completo. Si falla la validación, conserva la sesión anterior. */
     public void cargar(File estaciones, File conexiones) throws ExcepcionArchivoCsv {
@@ -70,7 +90,7 @@ public class SesionCsv {
 
     /**
      * Agrega una estación con índice -1, modifica la fila indicada o la elimina
-     * cuando la estación es null. Una estación referenciada debe conservarse.
+     * junto con sus conexiones cuando la estación es null.
      */
     public void editarEstacion(int indice, DatoEstacionCsv estacion) throws ExcepcionArchivoCsv {
         this.validarSesion();
@@ -78,16 +98,24 @@ public class SesionCsv {
         DatoConexionCsv[] conexiones = this.datos.getConexiones();
         int cantidad = this.cantidadTrasEdicion(anteriores.length, indice, estacion);
         if (estacion == null) {
-            String id = anteriores[indice].getId();
-            for (DatoConexionCsv conexion : conexiones) {
-                if (id.equals(conexion.getIdOrigen()) || id.equals(conexion.getIdDestino())) {
-                    throw new ExcepcionArchivoCsv("Retira primero las conexiones de la estación " + id + ".");
-                }
-            }
+            conexiones = this.conexionesSinEstacion(conexiones, anteriores[indice].getId());
         }
         DatoEstacionCsv[] estaciones = new DatoEstacionCsv[cantidad];
         this.copiarEdicion(anteriores, estaciones, indice, estacion);
         this.aplicar(estaciones, conexiones);
+    }
+
+    private DatoConexionCsv[] conexionesSinEstacion(DatoConexionCsv[] conexiones, String id) {
+        DatoConexionCsv[] restantes = new DatoConexionCsv[conexiones.length];
+        int cantidad = 0;
+        for (DatoConexionCsv conexion : conexiones) {
+            if (!id.equals(conexion.getIdOrigen()) && !id.equals(conexion.getIdDestino())) {
+                restantes[cantidad++] = conexion;
+            }
+        }
+        DatoConexionCsv[] resultado = new DatoConexionCsv[cantidad];
+        System.arraycopy(restantes, 0, resultado, 0, cantidad);
+        return resultado;
     }
 
     /**

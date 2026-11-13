@@ -4,6 +4,10 @@
  */
 package Funciones;
 
+import estructuras.Arista;
+import estructuras.Estacion;
+import estructuras.Grafo;
+import estructuras.ListaPropia;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -25,7 +29,7 @@ import javax.swing.JScrollPane;
 import org.graphstream.graph.Edge;
 import org.graphstream.graph.Graph;
 import org.graphstream.graph.Node;
-import org.graphstream.graph.implementations.MultiGraph;
+import org.graphstream.graph.implementations.SingleGraph;
 import org.graphstream.ui.geom.Point3;
 import org.graphstream.ui.layout.LayoutRunner;
 import org.graphstream.ui.swing_viewer.SwingViewer;
@@ -34,8 +38,7 @@ import org.graphstream.ui.view.Viewer;
 import org.graphstream.ui.view.camera.Camera;
 
 /**
- * Proyecta las filas CSV en GraphStream para inspección visual. El visor es
- * independiente del grafo que resolverá las consultas de UrbanRoute.
+ * Proyecta en GraphStream la misma red que usan las consultas de UrbanRoute.
  *
  * @author Eliam
  */
@@ -52,7 +55,7 @@ public class MostrarRed {
                    text-color: #142c46; text-style: bold; text-size: 12px;
                    text-alignment: above; text-padding: 2px, 1px;
                    text-background-mode: rounded-box; text-background-color: #f2f6fa; }
-            edge { size: 2px; arrow-shape: arrow; arrow-size: 8px, 5px;
+            edge { size: 2px;
                    text-color: #203a56; text-background-mode: rounded-box;
                    text-background-color: #ffffff; text-padding: 2px, 1px; text-size: 11px; }
             """;
@@ -61,10 +64,10 @@ public class MostrarRed {
      * Abre un mapa modal con los datos vigentes y libera el visor al regresar.
      *
      * @param ventana ventana principal que recupera el control al cerrar el mapa
-     * @param datos filas validadas de la sesión, incluso si están por guardar
+     * @param grafo red vigente de la sesión, incluso si hay cambios por guardar
      */
-    public void abrir(JFrame ventana, DatosCsv datos) {
-        Graph red = this.crearRed(datos);
+    public void abrir(JFrame ventana, Grafo grafo) {
+        Graph red = this.crearRed(grafo);
         JDialog dialogo = new JDialog(ventana, "UrbanRoute · Mapa de la red", true);
         // GraphStream registra el cierre normal del diseño en la consola.
         REGISTRO_DISENO.setLevel(Level.WARNING);
@@ -105,20 +108,18 @@ public class MostrarRed {
     }
 
     /**
-     * Proyecta todas las filas, incluidas estaciones aisladas y conexiones
-     * paralelas, en un modelo visual que se puede comprobar sin Swing.
-     *
-     * @param datos filas validadas de estaciones y conexiones
+     * @param grafo red ponderada no dirigida que se va a dibujar
      * @return representación para GraphStream
      */
-    Graph crearRed(DatosCsv datos) {
-        Graph red = new MultiGraph("UrbanRoute");
-        DatoEstacionCsv[] estaciones = datos.getEstaciones();
-        String[] lineas = new String[estaciones.length];
+    Graph crearRed(Grafo grafo) {
+        Graph red = new SingleGraph("UrbanRoute");
+        ListaPropia<String> ids = grafo.getIdsEstaciones();
+        String[] lineas = new String[ids.tamano()];
         StringBuilder estilo = new StringBuilder(ESTILO);
         estilo.append("edge.transbordo { fill-color: ").append(COLOR_TRANSBORDO).append("; }\n");
         red.setAttribute("ui.antialias");
-        for (DatoEstacionCsv estacion : estaciones) {
+        for (estructuras.Nodo<String> actual = ids.getCabeza(); actual != null; actual = actual.getSiguiente()) {
+            Estacion estacion = grafo.getEstacion(actual.getInfo());
             int indiceLinea = this.indiceDeLinea(lineas, estacion.getLinea());
             String clase = "linea" + indiceLinea;
             if (lineas[indiceLinea] == null) {
@@ -132,13 +133,20 @@ public class MostrarRed {
             nodo.setAttribute("ui.class", clase);
         }
         int indice = 0;
-        for (DatoConexionCsv conexion : datos.getConexiones()) {
-            Edge arista = red.addEdge("conexion-" + indice++, conexion.getIdOrigen(),
-                    conexion.getIdDestino(), true);
-            String lineaOrigen = arista.getSourceNode().getAttribute("ui.class", String.class);
-            String lineaDestino = arista.getTargetNode().getAttribute("ui.class", String.class);
-            arista.setAttribute("ui.class", lineaOrigen.equals(lineaDestino) ? lineaOrigen : "transbordo");
-            arista.setAttribute("ui.label", conexion.getTiempoMinutos() + " min");
+        for (estructuras.Nodo<String> actual = ids.getCabeza(); actual != null; actual = actual.getSiguiente()) {
+            String origen = actual.getInfo();
+            for (estructuras.Nodo<Arista> vecino = grafo.getVecinos(origen).getCabeza();
+                    vecino != null; vecino = vecino.getSiguiente()) {
+                Arista tramo = vecino.getInfo();
+                // Cada tramo está en la lista de sus dos extremos.
+                if (origen.compareTo(tramo.getDestino()) < 0) {
+                    Edge arista = red.addEdge("conexion-" + indice++, origen, tramo.getDestino());
+                    String lineaOrigen = arista.getSourceNode().getAttribute("ui.class", String.class);
+                    String lineaDestino = arista.getTargetNode().getAttribute("ui.class", String.class);
+                    arista.setAttribute("ui.class", lineaOrigen.equals(lineaDestino) ? lineaOrigen : "transbordo");
+                    arista.setAttribute("ui.label", tramo.getPeso() + " min");
+                }
+            }
         }
         red.setAttribute("ui.stylesheet", estilo.toString());
         red.setAttribute("lineas.csv", (Object) lineas);

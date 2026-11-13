@@ -41,8 +41,13 @@ public class ConsultasRed {
             return "No hay una ruta entre " + this.etiquetaEstacion(grafo, origen)
                     + " y " + this.etiquetaEstacion(grafo, destino) + ".";
         }
+        int tiempoTotal = dijkstra.getTiempoTotal();
+        if (tiempoTotal <= 0) {
+            throw new IllegalArgumentException("El cálculo devolvió un tiempo de ruta inválido."
+                    + " Revisa los tiempos de traslado de los CSV.");
+        }
         StringBuilder resultado = new StringBuilder("Tiempo total: ")
-                .append(dijkstra.getTiempoTotal()).append(" min\n\nEstaciones en orden:\n");
+                .append(tiempoTotal).append(" min\n\nEstaciones en orden:\n");
         this.agregarEstaciones(resultado, grafo, ruta);
         return resultado.toString();
     }
